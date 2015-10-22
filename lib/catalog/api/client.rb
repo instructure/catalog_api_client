@@ -23,68 +23,70 @@ module Catalog
         @api_path = "/api/#{@version}"
       end
 
+      [:get, :post, :put, :delete].each do |method|
+        define_method method do |resource, options = { resource_id: nil, request_body: nil }|
+          delegate(method, resource, options)
+        end
+      end
+
+      private
+
+      def delegate(method, resource, options)
+        paginate?(method, options) ? paginated_request(options, resource) : request(method, resource, options)
+      end
+
+      def paginate?(method, options)
+        (method.eql? :get) && (options[:resource_id].nil?)
+      end
+
+      def request(method, resource, options)
+        path = uri(resource, options[:resource_id])
+        call_api(method, path, options[:request_body]).last # return response body w/o header
+      end
+
+      def paginated_request(options, resource)
+        path = uri(resource)
+        headers, body = call_api(:get, path)
+        return body if body.empty?
+
+        cur_page_index = 1
+        path = next_page(headers)
+        while path && pages?(cur_page_index, options[:max_pages])
+          headers, paginated_body = call_api(:get, path)
+          body.concat paginated_body
+          cur_page_index += 1
+          path = next_page(headers)
+        end
+
+        body
+      end
+
       def uri(resource, resource_id = nil)
         URI::Generic.build(
           scheme: @scheme,
           host:   @host,
           port:   @port.to_i,
-          path: [@api_path, resource, resource_id].compact.join('/')
+          path:   [@api_path, resource, resource_id].compact.join('/')
         ).to_s
       end
 
-      [:get, :post, :put, :delete].each do |method|
-        define_method method do |resource, options = { resource_id: nil, request_body: nil }|
-          if (method.eql? :get) && (options[:resource_id].nil?)
-            paginated_api_request(resource, options[:max_pages])
-          else
-            api_request(method, resource, options)
-          end
-        end
+      def headers_and_body(response)
+        parsed_response = JSON.parse(response) rescue {}
+        headers = response.headers
+        body = if parsed_response.size == 1
+                 parsed_response.first.last
+               else
+                 parsed_response
+               end
+        [headers, body]
       end
 
-      def api_request(method, resource, options)
-        path = uri(resource, options[:resource_id])
-        response = call_api(method, path, options[:request_body])
-        p_response = process_response response
-        (p_response.is_a?(Hash) && p_response.size == 1) ? p_response.first.last : p_response
+      def pages?(cur_page_index, max_page)
+        max_page.nil? || cur_page_index < max_page
       end
 
-      def paginated_api_request(resource, max_pages)
-        data ||= []
-        cur_page_index = 0
-        path = uri(resource)
-        while path && evaluate_page(cur_page_index, max_pages)
-          response = call_api(:get, path)
-          p_response = process_response response
-          if p_response.is_a?(Hash)
-            data += p_response[resource]
-          else
-            data = p_response
-            break
-          end
-          path = next_page(response)
-          cur_page_index += 1 unless path.nil?
-        end
-        data
-      end
-
-      private
-
-      def evaluate_page(cur_page_index, max_page)
-        if max_page.nil?
-          true
-        elsif cur_page_index < max_page
-          true
-        else
-          false
-        end
-      end
-
-      def process_response(response)
-        (response.nil? || response == '') ? response : JSON.parse(response)
-      end
-
-      def call_api(method, path, request_body=nil)
+      def call_api(method, path, request_body = nil)
+        response =
         case method
         when :delete, :get
           RestClient.send(method, path, @auth_header)
@@ -93,13 +95,12 @@ module Catalog
         else
           fail "Invalid method: #{method}"
         end
+        headers_and_body(response)
       end
 
-      def next_page(response)
-        links = LinkHeader.parse(response.headers[:link]).links
-        if next_link = links.find { |link| link['rel'] == 'next' }
-          next_link.href
-        end
+      def next_page(headers)
+        links = LinkHeader.parse(headers[:link]).links
+        next_link = links.find { |link| link['rel'] == 'next' } and next_link.href
       end
     end
   end

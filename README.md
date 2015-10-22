@@ -7,7 +7,7 @@ Visit `[your-catalog-domain]/admin/api_keys` to create an API key.
 To authenticate, set the API key in the constructor. (see Usage section)
 
 ## Pagination
-All index endpoints support pagination. By default, returns all data.
+All index endpoints support pagination. By default, returns all pages.
 
 If no items exist for the requested page, the response will be a root key with an empty array.
 
