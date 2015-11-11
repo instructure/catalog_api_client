@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
 
   spec.summary       = %q{ Ruby client for catalog api }
   spec.description   = %q{ Ruby client for catalog api }
-  spec.homepage      = 'TODO: github website'
+  spec.homepage      = 'https://github.com/instructure/catalog_api_client'
   spec.license       = 'MIT'
 
   spec.files         = Dir['lib/**/*.rb']
